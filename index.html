@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Interactive Recipe Finder</title>
+<style>
+  :root{
+    --bg:#0f1724;
+    --card:#0b1220;
+    --muted:#94a3b8;
+    --accent:#ef8354;
+    --glass: rgba(255,255,255,0.03);
+    --radius:14px;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background: linear-gradient(180deg,#071022 0%, #081428 60%);
+    color:#e6eef6;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+  header{
+    padding:28px 20px;
+    display:flex;
+    gap:16px;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    text-align:center;
+  }
+  .brand{ font-size:20px; font-weight:700; color:var(--accent) }
+  .subtitle{ color:var(--muted); margin-top:6px; font-size:13px }
+  .controls{
+    display:flex; gap:10px; align-items:center; margin-top:14px;
+    width:min(1000px,95%); justify-content:center; flex-wrap:wrap;
+  }
+  .search, .select {
+    background:var(--glass); border:1px solid rgba(255,255,255,0.04);
+    padding:10px 12px; border-radius:10px; color:inherit; outline:none; min-width:220px;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+  }
+  .btn{
+    background:linear-gradient(90deg,var(--accent), #ffb27a);
+    border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600;
+    box-shadow: 0 8px 24px rgba(239,131,84,0.12);
+  }
+  .btn:active{ transform:translateY(1px) }
+  .main{
+    width:min(1200px,96%); margin:18px auto; padding-bottom:60px;
+  }
+  #results{
+    display:grid;
+    grid-template-columns: repeat(auto-fill,minmax(240px,1fr));
+    gap:16px;
+  }
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:var(--radius); overflow:hidden; border:1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 6px 20px rgba(2,6,23,0.5); display:flex; flex-direction:column;
+  }
+  .card img{ width:100%; height:180px; object-fit:cover; display:block }
+  .card .body{ padding:12px; display:flex; gap:8px; flex-direction:column; flex:1 }
+  .title{ font-weight:700; font-size:15px; }
+  .meta{ color:var(--muted); font-size:13px }
+  .card .actions{ display:flex; gap:8px; margin-top:auto; align-items:center; justify-content:space-between }
+  .pill{ background: rgba(255,255,255,0.03); padding:6px 8px; border-radius:999px; font-size:12px; color:var(--muted) }
+  .fav{ border:none; background:transparent; cursor:pointer; font-weight:700; color:var(--accent) }
+  .empty{ color:var(--muted); padding:36px; text-align:center; border-radius:12px; background:rgba(255,255,255,0.02) }
+  /* Modal */
+  .modal-backdrop{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:1000; }
+  .modal-backdrop.show{ display:flex; background:linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.85)); padding:20px }
+  .modal{
+    max-width:900px; width:100%; max-height:90vh; overflow:auto; background:linear-gradient(180deg,#071827,#081a2a);
+    border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.04);
+  }
+  .modal .head{ display:flex; gap:12px }
+  .modal img{ width:220px; height:160px; object-fit:cover; border-radius:10px; flex-shrink:0 }
+  .ing-list{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-top:8px }
+  @media (max-width:700px){
+    .modal img{ width:120px; height:110px }
+    .ing-list{ grid-template-columns:repeat(1,1fr) }
+  }
+  footer{ color:var(--muted); text-align:center; padding:28px 12px; font-size:13px }
+  a.link{ color:var(--accent); font-weight:700; text-decoration:none }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Interactive Recipe Finder</div>
+  <div class="subtitle">Search recipes by name or ingredients — save favorites locally. Data from <a class="link" href="https://www.themealdb.com" target="_blank">TheMealDB</a></div>
+
+  <div class="controls" role="search" aria-label="Search recipes">
+    <input id="searchInput" class="search" type="search" placeholder="Search by name or ingredients (comma-separated)"/>
+    <select id="categorySelect" class="select" aria-label="Filter by category">
+      <option value="">All categories</option>
+    </select>
+    <button id="searchBtn" class="btn" title="Search">Search</button>
+    <button id="randomBtn" class="btn" title="Random recipe">Surprise me</button>
+    <button id="showFavsBtn" class="btn" title="Show saved favorites">My favorites</button>
+  </div>
+</header>
+
+<main class="main">
+  <div id="results" aria-live="polite"></div>
+</main>
+
+<!-- Modal -->
+<div id="modalBackdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="modalTitle">Recipe</h3>
+      <button id="closeModal" class="btn" aria-label="Close details">Close</button>
+    </div>
+    <div class="head" style="margin-top:8px">
+      <img id="modalImg" src="" alt="Recipe image"/>
+      <div style="flex:1">
+        <div id="modalCategory" class="pill"></div>
+        <h2 id="modalName" style="margin:6px 0 4px"></h2>
+        <div id="modalArea" class="meta"></div>
+        <div id="modalInstructions" style="margin-top:8px; color:var(--muted); white-space:pre-wrap;"></div>
+      </div>
+    </div>
+    <h4 style="margin-top:10px">Ingredients</h4>
+    <div id="modalIngredients" class="ing-list"></div>
+    <div style="margin-top:12px">
+      <a id="modalYoutube" href="#" target="_blank" class="link">Watch on YouTube</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Built for internships • Open-source demo • <span id="localStatus"></span>
+</footer>
+
+<script>
+/*
+ Interactive Recipe Finder - single-file vanilla JS
+ Uses TheMealDB free API: https://www.themealdb.com/api.php
+ Features:
+ - Search by name OR ingredients (comma-separated)
+ - Filter by category
+ - Favorite recipes stored in localStorage
+ - Modal with ingredients and instructions
+*/
+
+const API = 'https://www.themealdb.com/api/json/v1/1';
+const resultsEl = document.getElementById('results');
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const randomBtn = document.getElementById('randomBtn');
+const categorySelect = document.getElementById('categorySelect');
+const showFavsBtn = document.getElementById('showFavsBtn');
+const modalBackdrop = document.getElementById('modalBackdrop');
+const closeModal = document.getElementById('closeModal');
+const modalImg = document.getElementById('modalImg');
+const modalName = document.getElementById('modalName');
+const modalCategory = document.getElementById('modalCategory');
+const modalArea = document.getElementById('modalArea');
+const modalInstructions = document.getElementById('modalInstructions');
+const modalIngredients = document.getElementById('modalIngredients');
+const modalYoutube = document.getElementById('modalYoutube');
+const localStatus = document.getElementById('localStatus');
+
+let favorites = {}; // map idMeal -> meal object
+
+function updateLocalStatus(){
+  const n = Object.keys(favorites).length;
+  localStatus.textContent = n ? `${n} saved` : 'No saved recipes';
+}
+
+function loadFavorites(){
+  try{
+    const raw = localStorage.getItem('rf-favorites');
+    if(raw) favorites = JSON.parse(raw);
+  }catch(e){ favorites = {} }
+  updateLocalStatus();
+}
+
+function saveFavorites(){
+  localStorage.setItem('rf-favorites', JSON.stringify(favorites));
+  updateLocalStatus();
+}
+
+async function init(){
+  loadFavorites();
+  await loadCategories();
+  addEventListeners();
+  // initial: show some popular meals by search 'chicken' to populate UI
+  await searchByName('chicken');
+}
+
+function addEventListeners(){
+  searchBtn.addEventListener('click', ()=>doSearch());
+  searchInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doSearch(); });
+  randomBtn.addEventListener('click', async ()=>{ await showRandom(); });
+  closeModal.addEventListener('click', ()=>closeDetails());
+  showFavsBtn.addEventListener('click', ()=>showFavorites());
+  categorySelect.addEventListener('change', ()=>doSearch());
+  modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) closeDetails(); });
+}
+
+async function loadCategories(){
+  try{
+    const res = await fetch(API + '/list.php?c=list');
+    const data = await res.json();
+    if(data.meals){
+      data.meals.forEach(c=>{
+        const opt = document.createElement('option');
+        opt.value = c.strCategory;
+        opt.textContent = c.strCategory;
+        categorySelect.appendChild(opt);
+      });
+    }
+  }catch(e){ console.warn('Failed to load categories', e) }
+}
+
+function renderEmpty(msg){
+  resultsEl.innerHTML = `<div class="empty">${msg || 'No recipes found'}</div>`;
+}
+
+function renderMeals(meals){
+  if(!meals || !meals.length) return renderEmpty('No recipes found.');
+  resultsEl.innerHTML = '';
+  meals.forEach(meal=>{
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <img src="${meal.strMealThumb}" alt="${meal.strMeal}" />
+      <div class="body">
+        <div>
+          <div class="title">${meal.strMeal}</div>
+          <div class="meta">${meal.strCategory || ''} • ${meal.strArea || ''}</div>
+        </div>
+        <div class="actions">
+          <div class="pill">ID ${meal.idMeal}</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn" data-id="${meal.idMeal}" aria-label="View details">Details</button>
+            <button class="fav" data-id="${meal.idMeal}" aria-label="Toggle favorite">${favorites[meal.idMeal] ? '★' : '☆'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+    resultsEl.appendChild(card);
+    // attach events
+    card.querySelector('.btn').addEventListener('click', ()=> viewMeal(meal.idMeal));
+    const favBtn = card.querySelector('.fav');
+    favBtn.addEventListener('click', ()=>{
+      toggleFavorite(meal);
+      favBtn.textContent = favorites[meal.idMeal] ? '★' : '☆';
+    });
+  });
+}
+
+function toggleFavorite(meal){
+  if(favorites[meal.idMeal]){
+    delete favorites[meal.idMeal];
+  } else {
+    // store a lightweight object
+    favorites[meal.idMeal] = {
+      idMeal: meal.idMeal,
+      strMeal: meal.strMeal,
+      strMealThumb: meal.strMealThumb,
+      strCategory: meal.strCategory,
+      strArea: meal.strArea
+    };
+  }
+  saveFavorites();
+}
+
+async function doSearch(){
+  const q = searchInput.value.trim();
+  const category = categorySelect.value;
+  if(!q){
+    // if no query, show popular by category if selected
+    if(category){
+      await searchByCategory(category);
+    } else {
+      renderEmpty('Type a recipe name or ingredients (comma-separated) and press Search.');
+    }
+    return;
+  }
+  // decide: if contains comma -> ingredient list search
+  if(q.includes(',')){
+    const ingredients = q.split(',').map(s=>s.trim()).filter(Boolean);
+    if(!ingredients.length) return renderEmpty('No ingredients provided.');
+    const meals = await searchByIngredients(ingredients, category);
+    renderMeals(meals);
+  } else {
+    // do a name search first; if category filter then filter results
+    const meals = await searchByName(q);
+    let filtered = meals || [];
+    if(category && filtered.length){
+      filtered = filtered.filter(m => m.strCategory === category);
+    }
+    renderMeals(filtered);
+  }
+}
+
+// Search by name using search.php?s=
+async function searchByName(name){
+  try{
+    const res = await fetch(API + '/search.php?s=' + encodeURIComponent(name));
+    const data = await res.json();
+    return data.meals || [];
+  }catch(e){
+    console.error(e);
+    return [];
+  }
+}
+
+// Search by category (lists many meals but without full details), so we then lookup details for each
+async function searchByCategory(category){
+  try{
+    const res = await fetch(API + '/filter.php?c=' + encodeURIComponent(category));
+    const data = await res.json();
+    const list = data.meals || [];
+    // convert to full meals by lookup
+    const meals = await lookupMeals(list.slice(0,20).map(m=>m.idMeal));
+    renderMeals(meals);
+    return meals;
+  }catch(e){ renderEmpty('Failed to load category.'); return []; }
+}
+
+// Search by multiple ingredients: intersection logic
+async function searchByIngredients(ingredients, category){
+  // Strategy:
+  // 1) fetch filter.php?i=<first ingredient> -> gives list of meals that contain it
+  // 2) for each meal, lookup full meal and check it contains ALL other ingredients
+  // 3) optionally filter by category
+  try{
+    const first = ingredients[0];
+    const res = await fetch(API + '/filter.php?i=' + encodeURIComponent(first));
+    const data = await res.json();
+    if(!data.meals) return [];
+    const candidateIds = data.meals.slice(0,50).map(m=>m.idMeal); // limit
+    const meals = await lookupMeals(candidateIds);
+    const want = ingredients.map(s => s.toLowerCase());
+    const filtered = meals.filter(m=>{
+      const ing = extractIngredients(m).map(x=>x.toLowerCase());
+      const hasAll = want.every(w => ing.some(i => i.includes(w)));
+      return hasAll;
+    });
+    return category ? filtered.filter(m=>m.strCategory===category) : filtered;
+  }catch(e){
+    console.error(e);
+    return [];
+  }
+}
+
+async function lookupMeals(ids){
+  // TheMealDB has lookup by id -> one call per id. We'll perform up to 20 concurrent lookups to fill details.
+  const out = [];
+  const MAX = 20;
+  const slice = ids.slice(0, MAX);
+  const promises = slice.map(id => fetch(API + '/lookup.php?i=' + id).then(r=>r.json()).then(d=>d.meals ? d.meals[0] : null).catch(()=>null));
+  const results = await Promise.all(promises);
+  results.forEach(r=>{ if(r) out.push(r); });
+  return out;
+}
+
+function extractIngredients(meal){
+  const list = [];
+  for(let i=1;i<=20;i++){
+    const ing = meal['strIngredient' + i];
+    const measure = meal['strMeasure' + i];
+    if(ing && ing.trim()) list.push((measure ? measure + ' ' : '') + ing.trim());
+  }
+  return list;
+}
+
+async function viewMeal(id){
+  try{
+    const res = await fetch(API + '/lookup.php?i=' + id);
+    const data = await res.json();
+    const meal = data.meals ? data.meals[0] : null;
+    if(!meal) return;
+    modalImg.src = meal.strMealThumb;
+    modalName.textContent = meal.strMeal;
+    modalCategory.textContent = meal.strCategory + ' • ' + meal.strArea;
+    modalArea.textContent = '';
+    modalInstructions.textContent = meal.strInstructions || '';
+    modalIngredients.innerHTML = '';
+    extractIngredients(meal).forEach(i=>{
+      const d = document.createElement('div');
+      d.className = 'pill';
+      d.textContent = i;
+      modalIngredients.appendChild(d);
+    });
+    modalYoutube.href = meal.strYoutube || '#';
+    showDetails();
+  }catch(e){ console.error(e) }
+}
+
+function showDetails(){
+  modalBackdrop.classList.add('show');
+  modalBackdrop.setAttribute('aria-hidden', 'false');
+  // basic focus handling
+  closeModal.focus();
+}
+
+function closeDetails(){
+  modalBackdrop.classList.remove('show');
+  modalBackdrop.setAttribute('aria-hidden', 'true');
+}
+
+// Random recipe
+async function showRandom(){
+  try{
+    const res = await fetch(API + '/random.php');
+    const data = await res.json();
+    const meal = data.meals ? data.meals[0] : null;
+    if(!meal) return;
+    renderMeals([meal]);
+  }catch(e){ console.error(e) }
+}
+
+// Show favorites
+function showFavorites(){
+  const arr = Object.values(favorites);
+  if(!arr.length) return renderEmpty('No favorites yet — click the ☆ on any recipe to save it.');
+  renderMeals(arr);
+}
+
+// initial call
+init();
+</script>
+</body>
+</html>
